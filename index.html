@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solana Trading Simulator Pro</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="stat-card">
+                <span class="stat-title">Balance</span>
+                <span class="stat-value">$<span id="balance">100.00</span></span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-title">Total PNL</span>
+                <span class="stat-value" id="totalPnlContainer">$<span id="totalPnl">0.00</span></span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-title">Positions</span>
+                <span class="stat-value" id="activePositions">0</span>
+            </div>
+        </div>
+
+        <div class="search-section">
+            <div class="search-container">
+                <input type="text" id="contractAddress" placeholder="Enter Token Contract Address" 
+                       oninput="handleInput(event)">
+            </div>
+
+            <!-- Token Info Card Section -->
+            <div class="token-card" id="tokenInfo">
+                <div class="token-address" id="contractDisplay"></div>
+                <div class="token-header">
+                    <img id="tokenImage" class="token-image" src="assets/token.png" alt="Token">
+                    <div class="token-info">
+                        <h3 id="tokenName"></h3>
+                        <div class="price-container">
+                            <div class="price-label">Current Price</div>
+                            <div class="price-value">$<span id="tokenPrice" class="live-price"></span></div>
+                        </div>
+                        <div class="trade-inputs">
+                            <input type="number" id="tradeAmount" placeholder="Amount in USD">
+                            <button onclick="buyToken()">Buy</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="positions-grid" id="openPositions"></div>
+
+        <!-- History Section -->
+        <div class="history-section">
+            <div class="history-header">
+                <h2>Trade History</h2>
+                <div class="history-total-pnl">
+                    <div class="label">Total Realized PNL</div>
+                    <div class="value" id="historyTotalPnl">$0.00</div>
+                </div>
+            </div>
+            <div id="tradeHistory"></div>
+            <div class="history-footer">
+                <div class="pagination">
+                    <button id="prevPage" class="page-btn"><i class="fas fa-chevron-left"></i></button>
+                    <span id="pageInfo">Page 1 of 1</span>
+                    <button id="nextPage" class="page-btn"><i class="fas fa-chevron-right"></i></button>
+                </div>
+                <button id="exportExcel" class="export-btn">
+                    <i class="fas fa-file-excel"></i> Export to Excel
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

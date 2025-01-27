@@ -1,0 +1,358 @@
+:root {
+    --primary: #9945FF;
+    --secondary: #14F195;
+    --background: #0F172A;
+    --card-bg: #1E293B;
+    --text: #E2E8F0;
+    --border: #334155;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background-color: var(--background);
+    color: var(--text);
+    line-height: 1.5;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 16px;
+}
+
+.header {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.stat-card {
+    background: var(--card-bg);
+    padding: 16px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+}
+
+.stat-title {
+    color: #94A3B8;
+    font-size: 0.875rem;
+}
+
+.stat-value {
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.search-section {
+    background: var(--card-bg);
+    padding: 16px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    margin-bottom: 24px;
+}
+
+input {
+    width: 100%;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--background);
+    color: var(--text);
+    font-size: 1rem;
+}
+
+button {
+    padding: 12px 24px;
+    border-radius: 8px;
+    border: none;
+    background: var(--primary);
+    color: white;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+
+button:hover {
+    opacity: 0.9;
+}
+
+.token-card {
+    background: rgba(30, 41, 59, 0.8);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(51, 65, 85, 0.5);
+    border-radius: 16px;
+    padding: 20px;
+    margin-top: 16px;
+}
+
+.token-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.token-image {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+}
+
+.token-info {
+    flex: 1;
+}
+
+.token-address {
+    font-size: 0.75rem;
+    color: #94A3B8;
+    background: rgba(15, 23, 42, 0.3);
+    padding: 8px 12px;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.token-info h3 {
+    font-size: 1.125rem;
+    margin-bottom: 4px;
+}
+
+.price-container {
+    background: rgba(15, 23, 42, 0.3);
+    padding: 12px;
+    border-radius: 12px;
+    margin-top: 12px;
+}
+
+.price-label {
+    font-size: 0.875rem;
+    color: #94A3B8;
+    margin-bottom: 4px;
+}
+
+.price-value {
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.trade-inputs {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+    margin-top: 12px;
+}
+
+.trade-inputs input {
+    border-radius: 12px;
+}
+
+.trade-inputs button {
+    border-radius: 12px;
+    padding: 12px 24px;
+    min-width: 100px;
+}
+
+.positions-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.position-card {
+    background: var(--card-bg);
+    padding: 16px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+}
+
+.position-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.position-token {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.position-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.stat {
+    padding: 8px;
+    background: var(--background);
+    border-radius: 8px;
+}
+
+.profit { color: var(--secondary); }
+.loss { color: #FF4567; }
+
+.history-section {
+    padding: 20px;
+}
+
+.history-total-pnl {
+    padding: 8px 16px;
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.3);
+}
+
+.history-total-pnl .label {
+    font-size: 0.875rem;
+    color: #94A3B8;
+}
+
+.history-total-pnl .value {
+    font-size: 1.125rem;
+    font-weight: 600;
+}
+
+.history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.history-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.history-token {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.live-price {
+    font-weight: bold;
+    font-size: 1.25rem;
+}
+
+.history-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    border-top: 1px solid #eee;
+}
+
+.pagination {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.page-btn {
+    background: none;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.page-btn:hover {
+    background: #f5f5f5;
+}
+
+.page-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.export-btn {
+    background: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.export-btn:hover {
+    background: #45a049;
+}
+
+@media (max-width: 768px) {
+    .container {
+        padding: 12px;
+    }
+
+    .token-card {
+        margin: 12px -12px;
+        border-radius: 0;
+        border-left: none;
+        border-right: none;
+    }
+
+    .header {
+        grid-template-columns: 1fr;
+    }
+
+    .token-header {
+        flex-direction: row;
+        align-items: center;
+    }
+
+    .token-image {
+        width: 48px;
+        height: 48px;
+    }
+
+    .token-info {
+        width: 100%;
+    }
+
+    .price-container {
+        margin-top: 8px;
+    }
+
+    .trade-inputs {
+        grid-template-columns: 1fr;
+    }
+
+    .trade-inputs button {
+        width: 100%;
+    }
+
+    .position-card {
+        padding: 12px;
+    }
+
+    .position-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+
+    .position-stats {
+        grid-template-columns: 1fr;
+    }
+
+    .history-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+}
