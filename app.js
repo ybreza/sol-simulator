@@ -77,21 +77,43 @@ async function fetchTokenInfo(address) {
 
         const tokenData = await tokenResponse.json();
         const priceData = await priceResponse.json();
-        const price = priceData.data[address].price;
-
-        elements.tokenInfo.style.display = 'block';
-        elements.tokenImage.src = tokenData.logoURI;
-        elements.tokenName.textContent = `${tokenData.name} (${tokenData.symbol})`;
-        elements.tokenPrice.textContent = parseFloat(price).toFixed(4);
         
-        // Display shortened contract address
-        const shortAddress = `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
-        document.getElementById('contractDisplay').textContent = shortAddress;
+        // Handle price as string and convert properly
+        const priceStr = priceData.data[address].price;
+        const price = parseFloat(priceStr);
 
-        startPriceUpdates(address);
+        if (!isNaN(price) && price > 0) {
+            elements.tokenInfo.style.display = 'block';
+            elements.tokenImage.src = tokenData.logoURI;
+            elements.tokenName.textContent = `${tokenData.name} (${tokenData.symbol})`;
+            
+            // Format price with proper decimal places for small numbers
+            elements.tokenPrice.textContent = formatPrice(price);
+            
+            // Display shortened contract address
+            const shortAddress = `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
+            document.getElementById('contractDisplay').textContent = shortAddress;
+
+            startPriceUpdates(address);
+        } else {
+            throw new Error('Invalid price received');
+        }
     } catch (error) {
         console.error('Error fetching token data:', error);
         elements.tokenInfo.style.display = 'none';
+    }
+}
+
+// Add a helper function to format prices appropriately
+function formatPrice(price) {
+    if (price < 0.0001) {
+        return price.toExponential(4);
+    } else if (price < 1) {
+        return price.toFixed(8);
+    } else if (price < 10) {
+        return price.toFixed(6);
+    } else {
+        return price.toFixed(4);
     }
 }
 
@@ -105,10 +127,11 @@ function startPriceUpdates(address) {
         try {
             const response = await fetch(`https://api.jup.ag/price/v2?ids=${address}`);
             const data = await response.json();
-            const price = parseFloat(data.data[address].price);
+            const priceStr = data.data[address].price;
+            const price = parseFloat(priceStr);
             
-            if (!isNaN(price) && price > 0) {  // Validate price
-                elements.tokenPrice.textContent = price.toFixed(4);
+            if (!isNaN(price) && price > 0) {
+                elements.tokenPrice.textContent = formatPrice(price);
                 updatePositionsPNL(address, price);
             }
         } catch (error) {
@@ -119,6 +142,7 @@ function startPriceUpdates(address) {
     updatePrice();
     state.priceUpdateIntervals[address] = setInterval(updatePrice, 2000);
 }
+
 
 // Update positions PNL
 function updatePositionsPNL(address, currentPrice) {
