@@ -28,8 +28,9 @@
             <div class="search-container">
                 <input type="text" id="contractAddress" placeholder="Enter Token Contract Address" 
                        oninput="handleInput(event)">
+                <button onclick="clearContract()" class="clear-button">Clear</button>
             </div>
-
+        
             <!-- Token Info Card Section -->
             <div class="token-card" id="tokenInfo">
                 <div class="token-address" id="contractDisplay"></div>

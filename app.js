@@ -19,9 +19,13 @@ function getTotalPages() {
 }
 
 function getCurrentPageData() {
+    const sortedHistory = [...state.history].sort((a, b) => {
+        return new Date(b.closedAt) - new Date(a.closedAt);
+    });
+    
     const startIndex = (state.currentPage - 1) * state.itemsPerPage;
     const endIndex = startIndex + state.itemsPerPage;
-    return state.history.slice(startIndex, endIndex);
+    return sortedHistory.slice(startIndex, endIndex);
 }
 
 function updatePaginationControls() {
@@ -148,20 +152,24 @@ function startPriceUpdates(address) {
 function updatePositionsPNL(address, currentPrice) {
     state.lastPrices[address] = currentPrice;
     state.totalPnl = state.positions.reduce((total, position) => {
-
         const positionPrice = state.lastPrices[position.contractAddress] || position.entryPrice;
         const pnl = (positionPrice - position.entryPrice) * position.quantity;
         
+        const percentageChange = ((positionPrice - position.entryPrice) / position.entryPrice) * 100;
 
         const pnlElement = document.getElementById(`pnl-${state.positions.indexOf(position)}`);
         if (pnlElement) {
-            pnlElement.textContent = pnl.toFixed(2);
+            pnlElement.innerHTML = `
+                $${pnl.toFixed(2)} 
+                <span class="${percentageChange >= 0 ? 'profit' : 'loss'}">
+                    (${percentageChange >= 0 ? '+' : ''}${percentageChange.toFixed(2)}%)
+                </span>
+            `;
             pnlElement.className = pnl >= 0 ? 'profit' : 'loss';
         }
         
         return total + pnl;
     }, 0);
-    
 
     elements.totalPnl.textContent = state.totalPnl.toFixed(2);
     elements.totalPnlContainer.className = `stat-value ${state.totalPnl >= 0 ? 'profit' : 'loss'}`;  
@@ -299,7 +307,7 @@ function renderPositions() {
     `).join('');
 
     // Start real-time updates for all positions
-    state.positions.forEach((position, index) => {
+    state.positions.forEach(position => {
         startPriceUpdates(position.contractAddress);
     });
 }
@@ -376,6 +384,16 @@ function renderHistory() {
     updatePaginationControls();
 }
 
+function clearContract() {
+    document.getElementById('contractAddress').value = '';
+    
+    if(document.getElementById('tradeAmount')) {
+        document.getElementById('tradeAmount').value = '';
+    }
+    
+    cleanup();
+}
+
 // Update UI
 function updateUI() {
     elements.balance.textContent = state.balance.toFixed(2);
@@ -413,3 +431,5 @@ window.addEventListener('unhandledrejection', (event) => {
     console.error('Promise rejection:', event.reason);
     // Implement retry logic or user notification here
 });
+
+
