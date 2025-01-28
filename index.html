@@ -73,8 +73,38 @@
                 </button>
             </div>
         </div>
+
+        <!-- Manajemen Section -->
+        <div class="management-section">
+            <div class="management-header">
+                <h2>Trading Management</h2>
+            </div>
+            <div class="management-grid">
+                <!-- Reset All -->
+                <div class="management-card">
+                    <h3>Reset Everything</h3>
+                    <p>Reset balance to $100 and clear all trading history</p>
+                    <button onclick="resetToInitial()" class="danger-btn">
+                        <i class="fas fa-trash"></i> Reset All
+                    </button>
+                </div>
+                
+                <!-- Delete by Contract -->
+                <div class="management-card">
+                    <h3>Delete by Contract</h3>
+                    <div class="input-group">
+                        <input type="text" id="deleteContractInput" placeholder="Enter contract address">
+                        <button onclick="deleteTradesByContract(document.getElementById('deleteContractInput').value)" class="warning-btn">
+                            <i class="fas fa-eraser"></i> Delete
+                        </button>
+                    </div>
+                </div>
+                
+            </div>
+        </div>
     </div>
 
     <script src="app.js"></script>
+    <script src="reset.js"></script>
 </body>
 </html>

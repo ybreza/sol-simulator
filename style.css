@@ -294,6 +294,92 @@ button:hover {
     background: #45a049;
 }
 
+.management-section {
+    background: var(--card-bg);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    padding: 20px;
+    margin-top: 20px;
+}
+
+.management-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.management-header h2 {
+    color: #fff;
+    margin: 0;
+}
+
+.management-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+}
+
+.management-card {
+    background: #2a2a2a;
+    border-radius: 8px;
+    padding: 20px;
+}
+
+.management-card h3 {
+    color: #fff;
+    margin: 0 0 10px 0;
+}
+
+.management-card p {
+    color: #888;
+    font-size: 14px;
+    margin: 0 0 15px 0;
+}
+
+.input-group {
+    display: flex;
+    gap: 10px;
+}
+
+.input-group input {
+    flex: 1;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 8px 12px;
+    color: #fff;
+}
+
+.input-group input::placeholder {
+    color: #666;
+}
+
+.danger-btn, .warning-btn {
+    background: #ff4444;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 8px 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: opacity 0.2s;
+}
+
+.warning-btn {
+    background: #ff8800;
+}
+
+.danger-btn:hover, .warning-btn:hover {
+    opacity: 0.8;
+}
+
+.danger-btn i, .warning-btn i {
+    font-size: 14px;
+}
+
 @media (max-width: 768px) {
     .container {
         padding: 12px;
