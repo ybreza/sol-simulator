@@ -234,10 +234,11 @@ async function closePosition(index) {
         if (!isNaN(currentPrice) && currentPrice > 0) {
             const pnl = (currentPrice - position.entryPrice) * position.quantity;
             
+            // Show PNL Card before updating state
+            showPnlCard(position, currentPrice, pnl);
 
             state.historyTotalPnl += pnl;
             state.balance += position.amount + pnl;
-            
 
             state.history.push({
                 ...position,
@@ -246,13 +247,10 @@ async function closePosition(index) {
                 closedAt: new Date().toISOString()
             });
 
-
             state.positions.splice(index, 1);
             delete state.lastPrices[position.contractAddress];
-            
 
             updatePositionsPNL(position.contractAddress, currentPrice);
-            
 
             localStorage.setItem('historyTotalPnl', state.historyTotalPnl);
             saveState();
@@ -262,6 +260,137 @@ async function closePosition(index) {
         console.error('Error closing position:', error);
         alert('Error closing position');
     }
+}
+
+// Add closePnlCard to window object so it can be called from HTML
+window.closePnlCard = closePnlCard;
+
+// Function to save PNL Card as image
+async function savePnlCard() {
+    const saveBtn = document.querySelector('.save-image-btn');
+    const pnlCard = document.querySelector('.pnl-card');
+    
+    // Add loading state
+    saveBtn.classList.add('loading');
+    saveBtn.innerHTML = '<i class="fas fa-spinner"></i> Saving...';
+
+    try {
+        // Capture the card
+        const canvas = await html2canvas(pnlCard, {
+            backgroundColor: '#1E293B', // Match card background
+            scale: 2, // Higher quality
+            removeContainer: true,
+            logging: false
+        });
+
+        // Create download link
+        const link = document.createElement('a');
+        link.download = `pnl-card-${new Date().getTime()}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+
+        // Reset button state
+        saveBtn.classList.remove('loading');
+        saveBtn.innerHTML = '<i class="fas fa-download"></i> Save as Image';
+    } catch (error) {
+        console.error('Error saving image:', error);
+        alert('Error saving image. Please try again.');
+        
+        // Reset button state
+        saveBtn.classList.remove('loading');
+        saveBtn.innerHTML = '<i class="fas fa-download"></i> Save as Image';
+    }
+}
+
+// Helper function to calculate time held
+function calculateTimeHeld(startDate, endDate) {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const diffTime = Math.abs(end - start);
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    const diffHours = Math.floor((diffTime % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const diffMinutes = Math.floor((diffTime % (1000 * 60 * 60)) / (1000 * 60));
+    
+    if (diffDays > 0) {
+        return `${diffDays}d ${diffHours}h`;
+    } else if (diffHours > 0) {
+        return `${diffHours}h ${diffMinutes}m`;
+    } else {
+        return `${diffMinutes}m`;
+    }
+}
+
+// Function to show PNL Card
+function showPnlCard(position, currentPrice, pnl) {
+    const timeHeld = calculateTimeHeld(position.timestamp, new Date().toISOString());
+    const percentageChange = ((currentPrice - position.entryPrice) / position.entryPrice) * 100;
+    
+    const modalHtml = `
+        <div class="pnl-modal">
+            <div class="pnl-card">
+                <button class="pnl-close" onclick="closePnlCard()">
+                    <i class="fas fa-times"></i>
+                </button>
+                <div class="pnl-header">
+                    <div class="pnl-token">
+                        <img src="${position.tokenImg}" alt="${position.symbol}">
+                        <span class="pnl-title">${position.symbol}</span>
+                    </div>
+                    <div class="pnl-amount ${pnl >= 0 ? 'profit' : 'loss'}">
+                        ${pnl >= 0 ? '+' : ''}$${Math.abs(pnl).toFixed(2)}
+                    </div>
+                    <div class="pnl-percentage ${pnl >= 0 ? 'profit' : 'loss'}">
+                        (${percentageChange >= 0 ? '+' : ''}${percentageChange.toFixed(2)}%)
+                    </div>
+                </div>
+                <div class="pnl-details">
+                    <div class="pnl-detail-item">
+                        <div class="pnl-detail-label">Entry Price</div>
+                        <div class="pnl-detail-value">$${position.entryPrice.toFixed(4)}</div>
+                    </div>
+                    <div class="pnl-detail-item">
+                        <div class="pnl-detail-label">Exit Price</div>
+                        <div class="pnl-detail-value">$${currentPrice.toFixed(4)}</div>
+                    </div>
+                    <div class="pnl-detail-item">
+                        <div class="pnl-detail-label">Quantity</div>
+                        <div class="pnl-detail-value">${position.quantity.toFixed(4)}</div>
+                    </div>
+                    <div class="pnl-detail-item">
+                        <div class="pnl-detail-label">Investment</div>
+                        <div class="pnl-detail-value">$${position.amount.toFixed(2)}</div>
+                    </div>
+                </div>
+                <div class="time-held">
+                    <div class="pnl-detail-label">Time Held</div>
+                    <div class="pnl-detail-value">${timeHeld}</div>
+                </div>
+                <div class="pnl-disclaimer">
+                    <p>This PNL Card is generated by <a href="https://simulatorsolana.netlify.app" target="_blank" class="site-link">simulatorsolana.netlify.app</a>. Cryptocurrency trading carries high risk. Make sure to study technical and fundamental analysis before engaging in real trading.</p>
+                </div>
+                <div class="pnl-actions">
+                    <button class="save-image-btn" onclick="savePnlCard()">
+                        <i class="fas fa-download"></i> Save as Image
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    setTimeout(() => {
+        document.querySelector('.pnl-modal').classList.add('show');
+    }, 10);
+}
+
+
+// Function to close PNL Card
+function closePnlCard() {
+    const modal = document.querySelector('.pnl-modal');
+    modal.classList.remove('show');
+    setTimeout(() => {
+        modal.remove();
+    }, 300);
 }
 
 // Save state to localStorage
@@ -425,6 +554,9 @@ updateUI();
 
 // Event listeners
 window.addEventListener('beforeunload', cleanup);
+
+// Add savePnlCard to window object so it can be called from HTML
+window.savePnlCard = savePnlCard;
 
 // Error handling for failed API calls
 window.addEventListener('unhandledrejection', (event) => {
