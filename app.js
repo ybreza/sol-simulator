@@ -1,5 +1,3 @@
---- START OF FILE app.js ---
-
 // State management
 let state = {
     balance: parseFloat(localStorage.getItem('balance')) || 100,
@@ -20,8 +18,12 @@ function getTotalPages() {
 }
 
 function getCurrentPageData() {
+    // Sort history by closedAt date descending
     const sortedHistory = [...state.history].sort((a, b) => {
-        return new Date(b.closedAt) - new Date(a.closedAt);
+        // Handle cases where closedAt might be missing or invalid temporarily
+        const dateA = a.closedAt ? new Date(a.closedAt) : new Date(0);
+        const dateB = b.closedAt ? new Date(b.closedAt) : new Date(0);
+        return dateB - dateA;
     });
 
     const startIndex = (state.currentPage - 1) * state.itemsPerPage;
@@ -29,12 +31,16 @@ function getCurrentPageData() {
     return sortedHistory.slice(startIndex, endIndex);
 }
 
+
 function updatePaginationControls() {
     const totalPages = getTotalPages();
-    document.getElementById('pageInfo').textContent = `Page ${state.currentPage} of ${totalPages}`;
+    // Ensure totalPages is at least 1
+    const displayTotalPages = Math.max(totalPages, 1);
+    document.getElementById('pageInfo').textContent = `Page ${state.currentPage} of ${displayTotalPages}`;
     document.getElementById('prevPage').disabled = state.currentPage === 1;
-    document.getElementById('nextPage').disabled = state.currentPage === totalPages;
+    document.getElementById('nextPage').disabled = state.currentPage === displayTotalPages; // Use displayTotalPages
 }
+
 
 // DOM Elements
 const elements = {
@@ -69,37 +75,40 @@ const handleInput = debounce(async (event) => {
     const address = event.target.value.trim();
     if (address.length >= 32) { // Minimum Solana address length
         await fetchTokenInfo(address);
+    } else {
+         elements.tokenInfo.style.display = 'none'; // Sembunyikan info token jika address tidak valid
+         // Hentikan update harga jika ada interval yang berjalan untuk address lama (jika dihapus)
+         clearPriceUpdateForAddress(address); // Anda mungkin perlu fungsi ini
     }
 }, 500);
 
+// *** UPDATED FUNCTION ***
 // Fetch token info (Metadata from Jupiter, Price from Fluxbeam)
 async function fetchTokenInfo(address) {
     try {
-        const [tokenResponse, priceResponse] = await Promise.all([
-            fetch(`https://tokens.jup.ag/token/${address}`), // Still use Jupiter for metadata
-            fetch(`https://data.fluxbeam.xyz/tokens/${address}/price`) // Use Fluxbeam for price
-        ]);
-
-        // Check if responses are ok
+        // Fetch token metadata (name, symbol, image) - still using Jupiter for this
+        const tokenResponse = await fetch(`https://tokens.jup.ag/token/${address}`);
         if (!tokenResponse.ok) {
-            throw new Error(`Failed to fetch token metadata: ${tokenResponse.statusText}`);
+             // Handle cases where token metadata is not found
+             console.error(`Token metadata not found for ${address}. Status: ${tokenResponse.status}`);
+             elements.tokenInfo.style.display = 'none';
+             return; // Stop execution if metadata fails
         }
-         if (!priceResponse.ok) {
-            // Handle common cases like 404 Not Found
-            if (priceResponse.status === 404) {
-                 throw new Error(`Token price not found on Fluxbeam for address: ${address}`);
-            }
-            throw new Error(`Failed to fetch token price: ${priceResponse.statusText}`);
-        }
-
         const tokenData = await tokenResponse.json();
-        const priceStr = await priceResponse.text(); // Fluxbeam returns plain text price
+
+        // Fetch price from Fluxbeam
+        const priceResponse = await fetch(`https://data.fluxbeam.xyz/tokens/${address}/price`);
+        if (!priceResponse.ok) {
+            throw new Error(`Fluxbeam price fetch failed with status ${priceResponse.status}`);
+        }
+        // Fluxbeam returns the price directly as text
+        const priceStr = await priceResponse.text();
         const price = parseFloat(priceStr);
 
-        if (tokenData && !isNaN(price) && price > 0) {
+        if (tokenData && tokenData.symbol && !isNaN(price) && price > 0) {
             elements.tokenInfo.style.display = 'block';
-            elements.tokenImage.src = tokenData.logoURI || 'placeholder.png'; // Add a fallback image if needed
-            elements.tokenName.textContent = `${tokenData.name} (${tokenData.symbol})`;
+            elements.tokenImage.src = tokenData.logoURI || 'placeholder.png'; // Fallback image
+            elements.tokenName.textContent = `${tokenData.name || 'Unknown'} (${tokenData.symbol})`;
 
             // Format price with proper decimal places for small numbers
             elements.tokenPrice.textContent = formatPrice(price);
@@ -107,73 +116,79 @@ async function fetchTokenInfo(address) {
             // Display shortened contract address
             const shortAddress = `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
             document.getElementById('contractDisplay').textContent = shortAddress;
+             document.getElementById('contractDisplay').title = address; // Show full address on hover
 
-            startPriceUpdates(address);
+
+            startPriceUpdates(address); // Start price updates using Fluxbeam
         } else {
-             if (!tokenData) console.error('Invalid token metadata received');
-             if (isNaN(price) || price <= 0) console.error('Invalid price received:', priceStr);
-            throw new Error('Invalid token metadata or price received');
+            console.error('Invalid price or token data received', { price, tokenData });
+            throw new Error('Invalid price or token data received');
         }
     } catch (error) {
         console.error('Error fetching token data:', error);
         elements.tokenInfo.style.display = 'none';
-         // Optionally display an error message to the user
-        alert(`Failed to fetch token data: ${error.message}`);
+         // Optionally display an error message to the user in the UI
+         // document.getElementById('fetchErrorDisplay').textContent = `Error fetching data for ${address}. Please check the contract address.`;
     }
 }
 
 
 // Add a helper function to format prices appropriately
 function formatPrice(price) {
-    if (price === 0) return '0.00'; // Handle zero price explicitly
+    if (price === 0) return '0.00'; // Handle zero price specifically
     if (price < 0.000001) { // Use exponential for very small numbers
-         return price.toExponential(4);
-     } else if (price < 0.01) {
-        return price.toFixed(8); // More precision for smaller decimals
+        return price.toExponential(4);
+    } else if (price < 0.01) {
+        return price.toFixed(8); // More precision for prices under 1 cent
     } else if (price < 1) {
-        return price.toFixed(6);
+        return price.toFixed(6); // Good precision for typical altcoins
     } else if (price < 100) {
-        return price.toFixed(4);
+        return price.toFixed(4); // Standard precision
     } else {
-        return price.toFixed(2); // Standard currency format for larger numbers
+        return price.toFixed(2); // For higher value tokens, 2 decimal places are usually enough
     }
 }
 
+// *** UPDATED FUNCTION ***
 // Real-time price updates using Fluxbeam
 function startPriceUpdates(address) {
-    if (state.priceUpdateIntervals[address]) {
-        clearInterval(state.priceUpdateIntervals[address]);
-    }
+    // Clear existing interval for this address *before* starting a new one
+    clearPriceUpdateForAddress(address);
 
     const updatePrice = async () => {
+        // Check if the contract address input still matches the address we are updating
+        // This prevents updates for a token that is no longer displayed
+        if (elements.contractInput.value.trim() !== address && !state.positions.some(p => p.contractAddress === address)) {
+             clearPriceUpdateForAddress(address);
+             console.log(`Stopping updates for ${address} as it's no longer the active token or in positions.`);
+             return;
+        }
+
         try {
             const response = await fetch(`https://data.fluxbeam.xyz/tokens/${address}/price`);
-            if (!response.ok) {
-                // Don't stop the interval, just log error for this attempt
-                console.error(`Error updating price (${address}): ${response.status} ${response.statusText}`);
-                 // Optionally stop updates if error persists or is critical (e.g., 404)
-                if (response.status === 404) {
-                    console.warn(`Price endpoint not found for ${address}. Stopping updates.`);
-                    clearInterval(state.priceUpdateIntervals[address]);
-                    delete state.priceUpdateIntervals[address];
-                }
-                return; // Skip update if fetch failed
-            }
+             if (!response.ok) {
+                 // Don't throw error here, just log it, maybe the next try will succeed
+                 console.error(`Fluxbeam price update failed for ${address}. Status: ${response.status}`);
+                 // Optionally, display a temporary error state in the price field?
+                 // elements.tokenPrice.textContent = 'Update Error';
+                 return; // Skip updating PNL if fetch failed
+             }
             const priceStr = await response.text();
             const price = parseFloat(priceStr);
 
             if (!isNaN(price) && price >= 0) { // Allow price to be 0
-                // Only update DOM if the currently displayed token matches
-                if (elements.contractInput.value === address) {
-                     elements.tokenPrice.textContent = formatPrice(price);
+                // Only update the main display if this address matches the input field
+                if (elements.contractInput.value.trim() === address) {
+                    elements.tokenPrice.textContent = formatPrice(price);
                 }
-                updatePositionsPNL(address, price);
+                updatePositionsPNL(address, price); // Update PNL for all relevant positions
             } else {
-                 console.error(`Invalid price format received for ${address}:`, priceStr);
+                 console.warn(`Received invalid price data from Fluxbeam for ${address}: ${priceStr}`);
             }
         } catch (error) {
-            // Network error or other fetch issue
-            console.error(`Error during price update fetch (${address}):`, error);
+            console.error('Error updating price:', error);
+            // Consider stopping updates if it fails repeatedly?
+            // clearPriceUpdateForAddress(address);
         }
     };
 
@@ -181,118 +196,138 @@ function startPriceUpdates(address) {
     state.priceUpdateIntervals[address] = setInterval(updatePrice, 3000); // Increased interval slightly
 }
 
+// Helper to clear a specific price update interval
+function clearPriceUpdateForAddress(address) {
+     if (state.priceUpdateIntervals[address]) {
+        clearInterval(state.priceUpdateIntervals[address]);
+        delete state.priceUpdateIntervals[address];
+        console.log(`Cleared price update interval for ${address}`);
+    }
+}
+
 
 // Update positions PNL
 function updatePositionsPNL(address, currentPrice) {
     state.lastPrices[address] = currentPrice;
-    let activeTotalPnl = 0; // Recalculate total PNL for active positions
+    let activeTotalPnl = 0; // Recalculate total PNL from active positions
 
     state.positions.forEach((position, index) => {
-        // Use the latest fetched price for the specific position's contract address
-        const positionCurrentPrice = state.lastPrices[position.contractAddress];
+        // Use the latest price if available for the specific position's address, otherwise use entry (shouldn't happen if updates are working)
+        const positionCurrentPrice = state.lastPrices[position.contractAddress] || position.entryPrice;
 
-        // If we don't have a recent price for *this specific position*, PNL can't be calculated yet.
-        // Or if entry price is somehow zero.
-        if (positionCurrentPrice === undefined || positionCurrentPrice === null || position.entryPrice === 0) {
-             const pnlElement = document.getElementById(`pnl-${index}`);
-             if (pnlElement) {
-                 pnlElement.textContent = 'Waiting for price...';
-                 pnlElement.className = 'stat-value'; // Reset class
-             }
-            return; // Skip PNL calculation for this position if price is missing or entry price is zero
+        // Check if the current update matches the position's address OR if we need to update all
+        // This calculation should happen for *every* position when *any* price updates, using the latest stored price for *each* position.
+        const pnl = (positionCurrentPrice - position.entryPrice) * position.quantity;
+
+        let percentageChange = 0;
+        if (position.entryPrice !== 0) { // Avoid division by zero
+            percentageChange = ((positionCurrentPrice - position.entryPrice) / position.entryPrice) * 100;
+        } else if (positionCurrentPrice > 0) {
+             percentageChange = Infinity; // Or handle as a large number/special case
         }
 
-        const pnl = (positionCurrentPrice - position.entryPrice) * position.quantity;
-        const percentageChange = ((positionCurrentPrice - position.entryPrice) / position.entryPrice) * 100;
 
         const pnlElement = document.getElementById(`pnl-${index}`);
         if (pnlElement) {
             pnlElement.innerHTML = `
                 $${pnl.toFixed(2)}
                 <span class="${percentageChange >= 0 ? 'profit' : 'loss'}">
-                    (${percentageChange >= 0 ? '+' : ''}${percentageChange.toFixed(2)}%)
+                    (${percentageChange === Infinity ? '∞' : (percentageChange >= 0 ? '+' : '') + percentageChange.toFixed(2)}%)
                 </span>
             `;
-            pnlElement.className = `stat-value ${pnl >= 0 ? 'profit' : 'loss'}`; // Ensure class includes stat-value
+            // Ensure class reflects PNL sign, handle zero case neutrally or as profit
+            pnlElement.className = `stat-value ${pnl >= 0 ? 'profit' : 'loss'}`;
         }
 
-        activeTotalPnl += pnl; // Add to the running total for active positions
+        activeTotalPnl += pnl; // Add this position's PNL to the running total
     });
 
+    state.totalPnl = activeTotalPnl; // Update the state's total PNL
 
-    // Update the total PNL display based on the sum of *currently calculated* PNLs
-    state.totalPnl = activeTotalPnl;
     elements.totalPnl.textContent = state.totalPnl.toFixed(2);
     elements.totalPnlContainer.className = `stat-value ${state.totalPnl >= 0 ? 'profit' : 'loss'}`;
-    // No need to save totalPnl to localStorage here, it's transient for active positions.
-    // localStorage.setItem('totalPnl', state.totalPnl); // Removed saving transient PNL
+    localStorage.setItem('totalPnl', state.totalPnl.toString()); // Save updated PNL
 }
 
 
+// *** UPDATED FUNCTION ***
 // Buy token with price check using Fluxbeam
 async function buyToken() {
-    const amount = parseFloat(document.getElementById('tradeAmount').value);
+    const amountInput = document.getElementById('tradeAmount');
+    const amount = parseFloat(amountInput.value);
     const address = elements.contractInput.value.trim(); // Ensure address is trimmed
 
-     if (!address) {
-        alert('Please enter a contract address.');
+     // --- Input Validations ---
+    if (!address || address.length < 32) {
+        alert('Please enter a valid Solana contract address.');
         return;
     }
      if (isNaN(amount) || amount <= 0) {
-        alert('Please enter a valid amount to buy.');
+        alert('Please enter a valid positive trade amount.');
         return;
     }
     if (amount > state.balance) {
-        alert('Insufficient balance');
+        alert('Insufficient balance.');
         return;
     }
+     // --- End Validations ---
 
 
     try {
         // Get fresh price from Fluxbeam API when Buy is clicked
         const response = await fetch(`https://data.fluxbeam.xyz/tokens/${address}/price`);
-         if (!response.ok) {
-            throw new Error(`Failed to fetch price for buying: ${response.statusText}`);
+        if (!response.ok) {
+            throw new Error(`Fluxbeam price fetch failed before buy. Status: ${response.status}`);
         }
         const priceStr = await response.text();
         const price = parseFloat(priceStr);
 
         if (isNaN(price) || price <= 0) {
-            alert('Invalid price received from API. Cannot buy at zero or negative price.');
+            // Check if the token info is displayed - maybe the fetch failed earlier
+             if (elements.tokenInfo.style.display === 'none') {
+                  alert('Cannot buy. Token information not loaded or invalid. Please check the contract address.');
+             } else {
+                 alert('Invalid price received from API. Cannot execute trade.');
+             }
             return;
         }
 
         const quantity = amount / price;
+        // Ensure token details are available from the UI elements (fetched previously)
+        const tokenNameElement = elements.tokenName; // Use the cached element
+        const tokenImageElement = elements.tokenImage; // Use the cached element
+        if (!tokenNameElement || !tokenNameElement.textContent || !tokenImageElement || !tokenImageElement.src) {
+             alert('Token details are missing. Please wait for the token info to load or try re-entering the address.');
+             return;
+        }
+        const symbolMatch = tokenNameElement.textContent.match(/\(([^)]+)\)/); // Extract symbol like (SOL) -> SOL
+         const symbol = symbolMatch ? symbolMatch[1] : 'UNKNOWN'; // Fallback symbol
+
+
         const newPosition = {
             contractAddress: address,
-            symbol: elements.tokenName.textContent.split('(')[1]?.replace(')', '') || 'UNKNOWN', // Safer symbol extraction
+            symbol: symbol,
             entryPrice: price,
             quantity,
             amount,
             timestamp: new Date().toISOString(),
-            tokenImg: elements.tokenImage.src
+            tokenImg: tokenImageElement.src
         };
 
         state.balance -= amount;
         state.positions.push(newPosition);
 
-        // Start price updates if not already started for this new position
-        if (!state.priceUpdateIntervals[address]) {
-            startPriceUpdates(address);
-        }
+        saveState();
+        updateUI(); // This will re-render positions and call startPriceUpdates if needed
 
-        saveState(); // Save balance and new position list
-        updateUI();
+        // Clear the amount input after successful buy
+        amountInput.value = '';
 
-        // Update displayed price after purchase (using the price we just bought at)
+        // Update displayed price just in case it wasn't updated recently
         elements.tokenPrice.textContent = formatPrice(price);
 
-        // Clear inputs after successful buy
-        document.getElementById('tradeAmount').value = '';
-        // Consider if you want to clear the contract address too
-        // elements.contractInput.value = '';
-        // elements.tokenInfo.style.display = 'none';
-
+        // Start price updates for the newly added position if not already running
+        startPriceUpdates(address);
 
     } catch (error) {
         console.error('Error buying token:', error);
@@ -300,30 +335,33 @@ async function buyToken() {
     }
 }
 
+// *** UPDATED FUNCTION ***
 // Close position using Fluxbeam price
 async function closePosition(index) {
     if (index < 0 || index >= state.positions.length) {
         console.error("Invalid index for closing position:", index);
-        return; // Prevent errors with invalid index
+        return;
     }
     const position = state.positions[index];
 
     try {
+        // Get current price from Fluxbeam
         const response = await fetch(`https://data.fluxbeam.xyz/tokens/${position.contractAddress}/price`);
-         if (!response.ok) {
-            throw new Error(`Failed to fetch closing price: ${response.statusText}`);
+        if (!response.ok) {
+            throw new Error(`Fluxbeam price fetch failed before close. Status: ${response.status}`);
         }
         const priceStr = await response.text();
         const currentPrice = parseFloat(priceStr);
 
-        if (!isNaN(currentPrice) && currentPrice >= 0) { // Allow closing at zero price
+        if (!isNaN(currentPrice) && currentPrice >= 0) { // Allow closing at 0 price
             const pnl = (currentPrice - position.entryPrice) * position.quantity;
 
-            // Show PNL Card before updating state
+            // Show PNL Card *before* updating state and UI fully
             showPnlCard(position, currentPrice, pnl);
 
+            // Update state *after* showing the card (or handle async if needed)
             state.historyTotalPnl += pnl;
-            state.balance += position.amount + pnl; // Add back original investment + PNL
+            state.balance += position.amount + pnl; // Return initial investment + PNL
 
             state.history.push({
                 ...position,
@@ -332,159 +370,175 @@ async function closePosition(index) {
                 closedAt: new Date().toISOString()
             });
 
-            const closedAddress = position.contractAddress;
+            const closedContractAddress = position.contractAddress;
             state.positions.splice(index, 1); // Remove position from active list
 
-            // Stop price updates ONLY if no other open positions use this contract address
-             const isAddressStillOpen = state.positions.some(p => p.contractAddress === closedAddress);
-             if (!isAddressStillOpen && state.priceUpdateIntervals[closedAddress]) {
-                clearInterval(state.priceUpdateIntervals[closedAddress]);
-                delete state.priceUpdateIntervals[closedAddress];
-                delete state.lastPrices[closedAddress]; // Clean up last price for this address
+             // Stop price updates for this token *only if* it's not the currently viewed token
+             // and no other open positions exist for it.
+             const isTokenStillDisplayed = elements.contractInput.value.trim() === closedContractAddress;
+             const hasOtherPositions = state.positions.some(p => p.contractAddress === closedContractAddress);
+             if (!isTokenStillDisplayed && !hasOtherPositions) {
+                 clearPriceUpdateForAddress(closedContractAddress);
              }
 
 
-            // Recalculate total active PNL after removing the position
-            updatePositionsPNL(null, null); // Pass null to force recalculation based on remaining positions
+            // Recalculate total PNL from remaining positions
+             updatePositionsPNL(closedContractAddress, currentPrice); // Call this to recalculate the total PNL displayed
 
-            localStorage.setItem('historyTotalPnl', state.historyTotalPnl); // Save cumulative history PNL
-            saveState(); // Save updated balance, positions, history
-            resetPagination(); // Go back to page 1 of history
-            updateUI();
+            localStorage.setItem('historyTotalPnl', state.historyTotalPnl.toString());
+            resetPagination(); // Reset to page 1 after closing a position affects history
+            saveState();
+            updateUI(); // Update balance, positions list, history list
         } else {
-            throw new Error('Invalid closing price received from API.');
+            throw new Error('Invalid price received from API during close.');
         }
     } catch (error) {
         console.error('Error closing position:', error);
-        alert(`Error closing position: ${error.message}`);
+        alert(`Error closing position: ${error.message}. Please try again.`);
     }
 }
 
+
+// --- Functions related to PNL Card, Saving, Time Held ---
+// (No changes needed in these based on the API endpoint switch)
 
 // Add closePnlCard to window object so it can be called from HTML
 window.closePnlCard = closePnlCard;
 
 // Function to save PNL Card as image
 async function savePnlCard() {
-     const pnlCard = document.querySelector('.pnl-card');
-     if (!pnlCard) return; // Exit if card not found
+     // Ensure html2canvas is loaded
+     if (typeof html2canvas === 'undefined') {
+         console.error('html2canvas library is not loaded.');
+         alert('Error: Image generation library not found.');
+         return;
+     }
 
-    const saveBtn = pnlCard.querySelector('.save-image-btn');
-    if (!saveBtn) return; // Exit if button not found
+    const saveBtn = document.querySelector('.save-image-btn');
+    const pnlCard = document.querySelector('.pnl-card'); // Target the card itself
+
+    if (!pnlCard || !saveBtn) {
+        console.error('PNL Card or Save Button element not found.');
+        return;
+    }
 
 
     // Add loading state
-    saveBtn.disabled = true; // Disable button during processing
-    saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...'; // Use font-awesome spin
+    saveBtn.disabled = true; // Disable button
+    saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...'; // Use fa-spin for animation
 
     try {
-         // Ensure html2canvas is loaded (add script tag to HTML if not already)
-         if (typeof html2canvas === 'undefined') {
-             console.error('html2canvas library is not loaded.');
-             alert('Error: html2canvas library not found. Cannot save image.');
-              // Reset button state
-             saveBtn.disabled = false;
-             saveBtn.innerHTML = '<i class="fas fa-download"></i> Save as Image';
-             return;
-         }
-
         // Capture the card
         const canvas = await html2canvas(pnlCard, {
-            backgroundColor: '#1E293B', // Match card background (use actual background if different)
+            backgroundColor: '#1E293B', // Match card background (adjust if needed)
             scale: 2, // Higher quality
             useCORS: true, // Important if images are from external sources (like token logos)
-            // removeContainer: true, // Sometimes causes issues, test without it first
-            logging: false
+            logging: false // Disable extensive logging in console
         });
 
         // Create download link
         const link = document.createElement('a');
-        link.download = `pnl-card-${Date.now()}.png`; // Use timestamp for unique name
-        link.href = canvas.toDataURL('image/png');
-        link.click();
+        const timestamp = new Date().getTime();
+         const filename = `pnl-card-${timestamp}.png`; // Use timestamp for unique names
+        link.download = filename;
+        link.href = canvas.toDataURL('image/png'); // Specify PNG format
+        link.click(); // Trigger download
 
-        // Reset button state after a short delay to ensure download starts
+        // Reset button state after a short delay
         setTimeout(() => {
-             saveBtn.disabled = false;
+            saveBtn.disabled = false;
              saveBtn.innerHTML = '<i class="fas fa-download"></i> Save as Image';
-         }, 500);
+        }, 500);
 
     } catch (error) {
         console.error('Error saving image:', error);
-        alert('Error saving image. Please try again.');
+        alert('Error saving image. Please check console for details.');
 
-        // Reset button state
+        // Reset button state on error
         saveBtn.disabled = false;
         saveBtn.innerHTML = '<i class="fas fa-download"></i> Save as Image';
     }
 }
 
-
 // Helper function to calculate time held
 function calculateTimeHeld(startDate, endDate) {
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const diffTime = Math.abs(end - start); // Milliseconds
+    try{
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+            return 'Invalid Date'; // Handle invalid date inputs
+        }
 
-    const diffSeconds = Math.floor(diffTime / 1000);
-    const diffMinutes = Math.floor(diffSeconds / 60);
-    const diffHours = Math.floor(diffMinutes / 60);
-    const diffDays = Math.floor(diffHours / 24);
+        const diffTime = Math.abs(end - start); // Difference in milliseconds
+        const diffSeconds = Math.floor(diffTime / 1000);
+        const diffMinutes = Math.floor(diffSeconds / 60);
+        const diffHours = Math.floor(diffMinutes / 60);
+        const diffDays = Math.floor(diffHours / 24);
 
-    const minutesRemainder = diffMinutes % 60;
-    const hoursRemainder = diffHours % 24;
-    const secondsRemainder = diffSeconds % 60;
+        const minutes = diffMinutes % 60;
+        const hours = diffHours % 24;
+        const days = diffDays;
 
+        let result = '';
+        if (days > 0) {
+            result += `${days}d `;
+        }
+        if (hours > 0 || days > 0) { // Show hours if days > 0 or hours > 0
+            result += `${hours}h `;
+        }
+        result += `${minutes}m`; // Always show minutes
 
-    if (diffDays > 0) {
-        return `${diffDays}d ${hoursRemainder}h ${minutesRemainder}m`;
-    } else if (diffHours > 0) {
-        return `${diffHours}h ${minutesRemainder}m ${secondsRemainder}s`;
-    } else if (diffMinutes > 0) {
-        return `${diffMinutes}m ${secondsRemainder}s`;
-    } else {
-         return `${diffSeconds}s`; // Show seconds if less than a minute
-    }
+        return result.trim();
+     } catch (e) {
+         console.error("Error calculating time held:", e);
+         return "Error";
+     }
 }
 
 // Function to show PNL Card
 function showPnlCard(position, currentPrice, pnl) {
     const timeHeld = calculateTimeHeld(position.timestamp, new Date().toISOString());
-    // Handle division by zero if entry price is 0
-    const percentageChange = position.entryPrice !== 0
-        ? ((currentPrice - position.entryPrice) / position.entryPrice) * 100
-        : 0; // Or handle as infinite/undefined if appropriate
+     let percentageChange = 0;
+     if (position.entryPrice !== 0) {
+         percentageChange = ((currentPrice - position.entryPrice) / position.entryPrice) * 100;
+     } else if (currentPrice > 0) {
+         percentageChange = Infinity; // Handle division by zero if entry price was 0
+     }
+
+    // Determine class based on PNL
+     const pnlClass = pnl > 0 ? 'profit' : (pnl < 0 ? 'loss' : 'neutral'); // Added neutral for 0 PNL
+
 
     const modalHtml = `
         <div class="pnl-modal">
             <div class="pnl-card">
-                <button class="pnl-close" onclick="closePnlCard()">
+                <button class="pnl-close" onclick="closePnlCard()" aria-label="Close PNL Card">
                     <i class="fas fa-times"></i>
                 </button>
                 <div class="pnl-header">
                     <div class="pnl-token">
-                         <img src="${position.tokenImg}" alt="${position.symbol || 'Token'}" onerror="this.src='placeholder.png'; this.onerror=null;"> <!-- Added fallback image -->
-                         <span class="pnl-title">${position.symbol || 'Unknown Token'}</span>
+                        <img src="${position.tokenImg || 'placeholder.png'}" alt="${position.symbol}" onerror="this.src='placeholder.png';">
+                        <span class="pnl-title">${position.symbol || 'N/A'}</span>
                     </div>
-                    <div class="pnl-amount ${pnl >= 0 ? 'profit' : 'loss'}">
-                        ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)} <!-- Removed Math.abs to show sign -->
+                    <div class="pnl-amount ${pnlClass}">
+                         ${pnl >= 0 ? '+' : ''}$${Math.abs(pnl).toFixed(2)}
                     </div>
-                    <div class="pnl-percentage ${pnl >= 0 ? 'profit' : 'loss'}">
-                        (${percentageChange >= 0 ? '+' : ''}${percentageChange.toFixed(2)}%)
+                    <div class="pnl-percentage ${pnlClass}">
+                        (${percentageChange === Infinity ? '∞' : (percentageChange >= 0 ? '+' : '') + percentageChange.toFixed(2)}%)
                     </div>
                 </div>
                 <div class="pnl-details">
                     <div class="pnl-detail-item">
                         <div class="pnl-detail-label">Entry Price</div>
-                        <div class="pnl-detail-value">$${formatPrice(position.entryPrice)}</div> <!-- Use formatPrice -->
+                        <div class="pnl-detail-value">$${formatPrice(position.entryPrice)}</div>
                     </div>
                     <div class="pnl-detail-item">
                         <div class="pnl-detail-label">Exit Price</div>
-                        <div class="pnl-detail-value">$${formatPrice(currentPrice)}</div> <!-- Use formatPrice -->
+                        <div class="pnl-detail-value">$${formatPrice(currentPrice)}</div>
                     </div>
                     <div class="pnl-detail-item">
                         <div class="pnl-detail-label">Quantity</div>
-                         <div class="pnl-detail-value">${position.quantity.toLocaleString(undefined, { maximumFractionDigits: 4 })}</div> <!-- Format quantity -->
+                         <div class="pnl-detail-value">${position.quantity.toFixed(4)}</div>
                     </div>
                     <div class="pnl-detail-item">
                         <div class="pnl-detail-label">Investment</div>
@@ -496,7 +550,7 @@ function showPnlCard(position, currentPrice, pnl) {
                     <div class="pnl-detail-value">${timeHeld}</div>
                 </div>
                 <div class="pnl-disclaimer">
-                     <p>PNL Card generated by <a href="https://simulatorsolana.netlify.app" target="_blank" class="site-link">simulatorsolana.netlify.app</a>. Trading involves risk. This is a simulation.</p>
+                    <p>PNL Card from <a href="https://simulatorsolana.netlify.app" target="_blank" rel="noopener noreferrer" class="site-link">SimulatorSolana</a>. Trading involves risk. DYOR.</p>
                 </div>
                 <div class="pnl-actions">
                     <button class="save-image-btn" onclick="savePnlCard()">
@@ -507,13 +561,21 @@ function showPnlCard(position, currentPrice, pnl) {
         </div>
     `;
 
+    // Remove any existing modal first
+    const existingModal = document.querySelector('.pnl-modal');
+    if (existingModal) {
+        existingModal.remove();
+    }
+
     document.body.insertAdjacentHTML('beforeend', modalHtml);
-    // Force reflow before adding class for transition
-    const modalElement = document.querySelector('.pnl-modal');
-     if (modalElement) {
-         void modalElement.offsetWidth; // Reflow trick
-         modalElement.classList.add('show');
-     }
+    // Use requestAnimationFrame for smoother transition start
+    requestAnimationFrame(() => {
+         const modal = document.querySelector('.pnl-modal');
+         if (modal) {
+             modal.classList.add('show');
+         }
+    });
+
 }
 
 
@@ -524,52 +586,56 @@ function closePnlCard() {
         modal.classList.remove('show');
         // Remove the element after the transition completes
         modal.addEventListener('transitionend', () => {
-            modal.remove();
-        }, { once: true }); // Ensure listener is removed after firing once
-    }
+             if(modal) modal.remove(); // Check if modal still exists before removing
+        }, { once: true }); // Ensure the event listener is removed after firing once
+     }
 }
 
 // Save state to localStorage
 function saveState() {
     try {
-        localStorage.setItem('balance', state.balance);
+        localStorage.setItem('balance', state.balance.toString());
         localStorage.setItem('positions', JSON.stringify(state.positions));
         localStorage.setItem('history', JSON.stringify(state.history));
-        localStorage.setItem('historyTotalPnl', state.historyTotalPnl); // Also save history PNL
-        // Removed saving transient totalPnl (active positions PNL)
-        // localStorage.setItem('totalPnl', state.totalPnl);
+        localStorage.setItem('totalPnl', state.totalPnl.toString());
+        localStorage.setItem('historyTotalPnl', state.historyTotalPnl.toString()); // Also save history total PNL
     } catch (error) {
         console.error("Error saving state to localStorage:", error);
-        // Handle potential storage errors (e.g., quota exceeded)
-        alert("Could not save progress. LocalStorage might be full or disabled.");
+        // Maybe notify the user that their session might not be saved
+        alert("Warning: Could not save session data. localStorage might be full or disabled.");
     }
 }
 
+// --- Render Functions ---
 
-// Render functions
 function renderPositions() {
     elements.activePositions.textContent = state.positions.length;
 
     if (state.positions.length === 0) {
-        elements.openPositions.innerHTML = '<p class="no-positions">No open positions.</p>'; // Message when empty
+        elements.openPositions.innerHTML = '<p class="text-center text-gray-500">No active positions.</p>'; // Display message when no positions
+         elements.totalPnl.textContent = '0.00'; // Reset total PNL display
+         elements.totalPnlContainer.className = 'stat-value'; // Reset PNL color
     } else {
         elements.openPositions.innerHTML = state.positions.map((position, index) => `
             <div class="position-card">
                 <div class="position-header">
                     <div class="position-token">
-                         <img src="${position.tokenImg}" alt="${position.symbol || 'Token'}" class="token-image" onerror="this.src='placeholder.png'; this.onerror=null;"> <!-- Added fallback -->
-                         <h3>${position.symbol || 'Unknown Token'}</h3>
+                        <img src="${position.tokenImg || 'placeholder.png'}" alt="${position.symbol}" class="token-image" onerror="this.src='placeholder.png';">
+                        <h3>${position.symbol || 'N/A'}</h3>
+                         <a href="https://solscan.io/token/${position.contractAddress}" target="_blank" rel="noopener noreferrer" class="contract-link" title="View on Solscan">
+                             <i class="fas fa-external-link-alt"></i>
+                         </a>
                     </div>
-                     <button class="close-btn" onclick="closePosition(${index})" title="Close Position"><i class="fas fa-times"></i> Close</button> <!-- Improved button -->
+                    <button onclick="closePosition(${index})" class="close-button" aria-label="Close position for ${position.symbol}">Close</button>
                 </div>
                 <div class="position-stats">
                     <div class="stat">
                         <div class="stat-title">Quantity</div>
-                         <div class="stat-value">${position.quantity.toLocaleString(undefined, { maximumFractionDigits: 4 })}</div> <!-- Format quantity -->
+                        <div class="stat-value">${position.quantity.toFixed(4)}</div>
                     </div>
                     <div class="stat">
                         <div class="stat-title">Entry Price</div>
-                        <div class="stat-value">$${formatPrice(position.entryPrice)}</div> <!-- Use formatPrice -->
+                        <div class="stat-value">$${formatPrice(position.entryPrice)}</div>
                     </div>
                     <div class="stat">
                         <div class="stat-title">Investment</div>
@@ -577,72 +643,79 @@ function renderPositions() {
                     </div>
                     <div class="stat">
                         <div class="stat-title">Current PNL</div>
-                         <div class="stat-value pnl-placeholder" id="pnl-${index}">Calculating...</div> <!-- Added placeholder class -->
+                        <div class="stat-value" id="pnl-${index}">Calculating...</div>
                     </div>
                 </div>
+                 <div class="position-footer">
+                     <small>Opened: ${new Date(position.timestamp).toLocaleString()}</small>
+                 </div>
             </div>
         `).join('');
-    }
 
-    // Start/Ensure real-time updates for all currently open positions
-    // This also handles cases where the page was reloaded with existing positions
-    state.positions.forEach(position => {
-        if (!state.priceUpdateIntervals[position.contractAddress]) {
-             startPriceUpdates(position.contractAddress);
-         } else {
-             // If interval exists, trigger an immediate PNL update in case price was missed
+         // After rendering, immediately trigger PNL calculation for all positions
+         // using the last known prices. Also restarts price updates.
+         let needsRecalc = false;
+         state.positions.forEach(position => {
              if (state.lastPrices[position.contractAddress] !== undefined) {
                  updatePositionsPNL(position.contractAddress, state.lastPrices[position.contractAddress]);
+             } else {
+                 needsRecalc = true; // Mark if any price is missing
              }
-         }
-    });
+             startPriceUpdates(position.contractAddress); // Ensure updates are running
+         });
+         // If any price was missing, recalculate the total PNL figure after individual updates
+          if (needsRecalc) {
+             updatePositionsPNL(null, null); // Pass null to trigger total recalc based on current state.lastPrices
+          }
+
+    }
 }
 
 
-// Export to Excel function (generates CSV)
-function exportToExcel() {
-     if (state.history.length === 0) {
+// Export to CSV function (changed from Excel to CSV for simplicity)
+function exportToCsv() {
+    if (state.history.length === 0) {
         alert("No trade history to export.");
         return;
     }
 
     // Create CSV header
-    const header = ['Symbol', 'Entry Date', 'Entry Time', 'Exit Date', 'Exit Time', 'Entry Price', 'Exit Price', 'Quantity', 'Investment', 'PNL ($)', 'PNL (%)', 'Time Held'];
+    const header = ['Symbol', 'Entry Date', 'Entry Time', 'Exit Date', 'Exit Time', 'Entry Price', 'Exit Price', 'Quantity', 'Investment', 'PNL ($)', 'Contract Address'];
     let csvContent = header.join(',') + '\n';
 
-    // Add data rows (sorted by closed date descending, matching the display)
-    const sortedHistory = [...state.history].sort((a, b) => new Date(b.closedAt) - new Date(a.closedAt));
+    // Sort history by closed date descending for export
+    const sortedHistory = [...state.history].sort((a, b) => {
+         const dateA = a.closedAt ? new Date(a.closedAt) : new Date(0);
+         const dateB = b.closedAt ? new Date(b.closedAt) : new Date(0);
+         return dateB - dateA;
+     });
 
+
+    // Add data rows
     sortedHistory.forEach(trade => {
-        const entryDate = new Date(trade.timestamp);
-        const exitDate = new Date(trade.closedAt);
-        const percentageChange = trade.entryPrice !== 0
-            ? (((trade.exitPrice - trade.entryPrice) / trade.entryPrice) * 100).toFixed(2)
-            : 'N/A';
-        const timeHeld = calculateTimeHeld(trade.timestamp, trade.closedAt);
+         const entryDate = new Date(trade.timestamp);
+         const exitDate = new Date(trade.closedAt);
 
         const row = [
-            `"${trade.symbol || 'Unknown'}"`, // Enclose symbol in quotes in case it has commas
-            entryDate.toLocaleDateString(),
-            entryDate.toLocaleTimeString(),
-            exitDate.toLocaleDateString(),
-            exitDate.toLocaleTimeString(),
-            trade.entryPrice.toFixed(8), // Use more precision for prices in CSV
-            trade.exitPrice.toFixed(8),
-            trade.quantity.toFixed(8),
-            trade.amount.toFixed(2),
-            trade.pnl.toFixed(2),
-            percentageChange,
-            `"${timeHeld}"` // Enclose time held in quotes
+            `"${trade.symbol || 'N/A'}"`, // Enclose in quotes if symbol might have commas
+             entryDate.toLocaleDateString(),
+             entryDate.toLocaleTimeString(),
+             exitDate.toLocaleDateString(),
+             exitDate.toLocaleTimeString(),
+             trade.entryPrice.toString(), // Use full precision numbers
+             trade.exitPrice.toString(),
+             trade.quantity.toString(),
+             trade.amount.toFixed(2),
+             trade.pnl.toFixed(2),
+             `"${trade.contractAddress}"` // Enclose address in quotes
         ];
         csvContent += row.join(',') + '\n';
     });
 
-
     // Create download link
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
     link.setAttribute('href', url);
     const timestamp = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
     link.setAttribute('download', `trade_history_${timestamp}.csv`);
@@ -650,163 +723,190 @@ function exportToExcel() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    URL.revokeObjectURL(url); // Clean up blob URL
+     URL.revokeObjectURL(url); // Clean up blob URL
 }
 
 
-// Event listeners for pagination
+// --- Pagination Event Listeners ---
 document.getElementById('prevPage').addEventListener('click', () => {
     if (state.currentPage > 1) {
         state.currentPage--;
-        renderHistory();
-        updatePaginationControls(); // Update controls after rendering
+        renderHistory(); // Re-render history for the new page
+        updatePaginationControls(); // Update button states and page info
     }
 });
 
 document.getElementById('nextPage').addEventListener('click', () => {
     if (state.currentPage < getTotalPages()) {
         state.currentPage++;
-        renderHistory();
-        updatePaginationControls(); // Update controls after rendering
+        renderHistory(); // Re-render history for the new page
+        updatePaginationControls(); // Update button states and page info
     }
 });
 
-// Listener for export button
-document.getElementById('exportExcel').addEventListener('click', exportToExcel);
-
-// Listener for contract input
-elements.contractInput.addEventListener('input', handleInput);
-
-// Listener for buy button
-document.getElementById('buyButton').addEventListener('click', buyToken); // Ensure button has id="buyButton"
-
-// Listener for clear button (assuming one exists or is added)
-const clearButton = document.getElementById('clearContractButton'); // Needs a button with this ID in HTML
-if (clearButton) {
-    clearButton.addEventListener('click', clearContract);
-}
+// Attach export function to the button
+document.getElementById('exportCsv').addEventListener('click', exportToCsv); // Changed ID and function name
 
 
+// --- Render History Function ---
 function renderHistory() {
-    const pageData = getCurrentPageData();
+    const pageData = getCurrentPageData(); // Gets sorted and paginated data
 
     if (pageData.length === 0 && state.history.length > 0) {
-        // Handle case where current page might be invalid after deleting items
-        state.currentPage = Math.max(1, getTotalPages());
+         // Handles case where current page might be beyond the last page after deletion/filtering
+         state.currentPage = Math.max(1, state.currentPage -1); // Go back one page if possible
          renderHistory(); // Re-render with corrected page
          return;
      }
 
+
     if (pageData.length === 0) {
-        elements.tradeHistory.innerHTML = '<p class="no-history">No trade history yet.</p>';
+        elements.tradeHistory.innerHTML = '<p class="text-center text-gray-500">No trade history yet.</p>';
     } else {
         elements.tradeHistory.innerHTML = pageData.map(trade => {
-             const pnlClass = trade.pnl >= 0 ? 'profit' : 'loss';
-             const exitPrice = trade.exitPrice !== undefined && trade.exitPrice !== null ? formatPrice(trade.exitPrice) : 'N/A';
-             const entryPrice = formatPrice(trade.entryPrice);
-             const closeDate = new Date(trade.closedAt);
+            const pnlClass = trade.pnl > 0 ? 'profit' : (trade.pnl < 0 ? 'loss' : 'neutral');
+            const entryDate = new Date(trade.timestamp);
+            const exitDate = new Date(trade.closedAt);
 
             return `
-                <div class="history-item">
-                    <div class="history-token">
-                        <img src="${trade.tokenImg}" alt="${trade.symbol || 'Token'}" class="token-image" onerror="this.src='placeholder.png'; this.onerror=null;">
-                        <div>
-                            <h4>${trade.symbol || 'Unknown'}</h4>
-                             <small>${closeDate.toLocaleDateString()} ${closeDate.toLocaleTimeString()}</small> <!-- Show date and time -->
-                        </div>
-                    </div>
-                    <div class="trade-info">
-                        <div class="${pnlClass}">
-                            ${trade.pnl >= 0 ? '+' : ''}$${trade.pnl.toFixed(2)}
-                        </div>
-                        <div class="price-details" title="Entry Price → Exit Price">
-                            $${entryPrice} → $${exitPrice}
-                        </div>
+            <div class="history-item">
+                <div class="history-token">
+                    <img src="${trade.tokenImg || 'placeholder.png'}" alt="${trade.symbol}" class="token-image" onerror="this.src='placeholder.png';">
+                    <div>
+                        <h4>${trade.symbol || 'N/A'}</h4>
+                         <small title="${exitDate.toLocaleString()}">Closed: ${exitDate.toLocaleDateString()}</small>
                     </div>
                 </div>
+                <div class="trade-info">
+                     <div class="pnl-value ${pnlClass}">
+                         ${trade.pnl >= 0 ? '+' : ''}$${trade.pnl.toFixed(2)}
+                    </div>
+                    <div class="price-details" title="Entry: ${formatPrice(trade.entryPrice)} at ${entryDate.toLocaleString()}">
+                        ${formatPrice(trade.entryPrice)} → ${formatPrice(trade.exitPrice)}
+                    </div>
+                </div>
+            </div>
             `;
         }).join('');
     }
 
-    updatePaginationControls(); // Ensure controls are updated whenever history renders
+    // Update pagination controls *after* rendering the content
+     updatePaginationControls();
 }
 
-// Function to clear contract input and related info
+// Function to clear contract input and related fields
 function clearContract() {
-     elements.contractInput.value = '';
+    const contractInput = document.getElementById('contractAddress');
     const tradeAmountInput = document.getElementById('tradeAmount');
-     if (tradeAmountInput) {
+
+     const addressToClear = contractInput.value.trim();
+
+
+    contractInput.value = '';
+    if(tradeAmountInput) {
         tradeAmountInput.value = '';
     }
-    elements.tokenInfo.style.display = 'none'; // Hide token info section
-    elements.tokenImage.src = ''; // Clear image
-    elements.tokenName.textContent = '';
-    elements.tokenPrice.textContent = '';
-    document.getElementById('contractDisplay').textContent = ''; // Clear short address display
 
-    // Optionally stop price updates if the cleared address was the one being updated
-    // However, startPriceUpdates already clears previous intervals, so this might not be strictly necessary
-    // unless you want to explicitly stop the *last* one when clearing.
-    // cleanup(); // Reconsider if cleanup is needed here - might stop updates for positions
+     // Hide token info section
+     elements.tokenInfo.style.display = 'none';
+     elements.tokenImage.src = ''; // Clear image
+     elements.tokenName.textContent = '';
+     elements.tokenPrice.textContent = '-';
+     document.getElementById('contractDisplay').textContent = 'N/A';
+
+
+    // Stop price updates for the cleared address if no positions exist for it
+     if (addressToClear && !state.positions.some(p => p.contractAddress === addressToClear)) {
+         clearPriceUpdateForAddress(addressToClear);
+     }
+
+    // Optional: Give focus back to the contract address input
+    // contractInput.focus();
 }
 
 
-// Update UI - Consolidates all rendering calls
+// Update UI - Central function to refresh displayed data
 function updateUI() {
+    // Update Balance
     elements.balance.textContent = state.balance.toFixed(2);
 
-    // Update Active PNL display (calculated in updatePositionsPNL)
+    // Update Total PNL for active positions (calculated in updatePositionsPNL)
     elements.totalPnl.textContent = state.totalPnl.toFixed(2);
     elements.totalPnlContainer.className = `stat-value ${state.totalPnl >= 0 ? 'profit' : 'loss'}`;
 
-    // Update history total PNL display
+    // Update History Total PNL display
     const historyTotalPnlElement = document.getElementById('historyTotalPnl');
-     if (historyTotalPnlElement) {
-        historyTotalPnlElement.textContent = `$${state.historyTotalPnl.toFixed(2)}`;
+    if (historyTotalPnlElement) {
+        historyTotalPnlElement.textContent = `${state.historyTotalPnl >= 0 ? '+' : ''}$${state.historyTotalPnl.toFixed(2)}`; // Add sign
         historyTotalPnlElement.className = `value ${state.historyTotalPnl >= 0 ? 'profit' : 'loss'}`;
+    } else {
+        console.warn("Element with ID 'historyTotalPnl' not found.");
     }
 
-    renderPositions(); // Renders open positions and triggers PNL calculation/updates
-    renderHistory(); // Renders trade history page
-    // updatePaginationControls(); // Called within renderHistory
+
+    renderPositions(); // Re-render active positions (this also triggers PNL updates)
+    renderHistory(); // Re-render trade history (handles pagination)
+     updatePaginationControls(); // Ensure controls are correct after potential history changes
+
+    // Note: saveState() should be called specifically when state *changes* (buy, close), not necessarily on every UI update.
 }
 
-// Reset pagination to first page, typically after an action that changes history
+// Reset pagination (e.g., when history changes)
 function resetPagination() {
     state.currentPage = 1;
+    // No need to call updateUI here, the function calling resetPagination usually calls updateUI afterwards
 }
 
-// Cleanup function - Stop all price update intervals
+// Cleanup function on window close/refresh
 function cleanup() {
-    console.log("Cleaning up price update intervals...");
-    Object.values(state.priceUpdateIntervals).forEach(intervalId => clearInterval(intervalId));
+    console.log("Cleaning up intervals before page unload...");
+    Object.keys(state.priceUpdateIntervals).forEach(address => {
+        clearInterval(state.priceUpdateIntervals[address]);
+    });
     state.priceUpdateIntervals = {};
-    state.lastPrices = {}; // Clear last known prices
+     // Note: State is saved via saveState() during operations like buy/close.
+     // No need to save state again here unless there's unsaved transient data.
 }
 
-// Initialize the application
-function initialize() {
-    console.log("Initializing Simulator...");
-    updateUI(); // Initial render based on loaded state
-     // Add event listeners not already added
-     window.addEventListener('beforeunload', cleanup); // Cleanup intervals on page close/refresh
+// --- Initialization ---
 
-     // Global error handlers
-     window.addEventListener('unhandledrejection', (event) => {
-         console.error('Unhandled Promise Rejection:', event.reason);
-         // alert(`An unexpected error occurred: ${event.reason?.message || event.reason}`);
-     });
-     window.addEventListener('error', (event) => {
-         console.error('Uncaught Error:', event.error);
-         // alert(`An critical error occurred: ${event.error?.message || 'Unknown error'}`);
-     });
- }
+// Attach the debounced input handler
+elements.contractInput.addEventListener('input', handleInput);
 
-// Start the app
-initialize();
+// Initial UI setup on page load
+document.addEventListener('DOMContentLoaded', () => {
+     // Ensure DOM is fully loaded before trying to access elements
+     console.log("DOM Loaded. Initializing UI.");
+     updateUI();
+     // Add other initial setup if needed
+ });
 
-// Expose functions to global scope if needed for inline HTML handlers (like closePosition, savePnlCard)
+
+// Global event listeners
+window.addEventListener('beforeunload', cleanup);
+
+// Make functions accessible globally if called directly from HTML (like onclick)
+window.buyToken = buyToken;
 window.closePosition = closePosition;
-window.savePnlCard = savePnlCard; // Already done, but good practice to keep together
+window.savePnlCard = savePnlCard;
+window.closePnlCard = closePnlCard;
+window.clearContract = clearContract; // Make clear function accessible
 
---- END OF FILE app.js ---
+
+// Basic Error Handling for Uncaught Promises
+window.addEventListener('unhandledrejection', (event) => {
+    console.error('Unhandled Promise Rejection:', event.reason);
+    // Basic user notification - avoid alerting for every minor issue
+    // Consider a more subtle notification system (e.g., a toast message)
+    // if (event.reason instanceof Error && event.reason.message.includes('Fluxbeam')) {
+    //     // Maybe show a temporary indicator that price updates might be delayed
+    // }
+});
+
+// Add listener for the clear button if it exists
+const clearButton = document.getElementById('clearContractButton'); // Assuming you have a button with this ID
+if (clearButton) {
+    clearButton.addEventListener('click', clearContract);
+} else {
+     console.warn("Clear contract button not found (expected ID 'clearContractButton')");
+}
